@@ -8,6 +8,17 @@
 (defvar jfo--field-size 25)
 (defvar jfo--buffer-name "*Julia Observing*")
 
+(defvar jfo-after-insert-hook '(jfo--render-svg)
+  "Hooks to run after insert text from the process filter.")
+
+(defvar-local jfo--form-mod-name nil)
+(defvar-local jfo--form-name nil)
+(defvar-local jfo--form-args nil)
+(defvar-local jfo--form-kwds nil)
+(defvar-local jfo--form-show-diffs nil)
+(defvar-local jfo--form-submit-button nil)
+(defvar-local jfo--output-start nil)
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; * Widgets
@@ -15,6 +26,11 @@
 
 (defun jfo--setup (mod func args kwds)
   (switch-to-buffer-other-frame jfo--buffer-name)
+  (set-window-dedicated-p (selected-window) t)
+
+  ;; (use-local-map julia-funcobs-keymap)
+  (julia-funcobs-mode)
+
   (kill-all-local-variables)
   
   (let ((inhibit-read-only t))
@@ -22,13 +38,13 @@
   (remove-overlays)
 
   (widget-insert "Function observing.\n\n")
-  (setq-local jfo--form-mod-name
+  (setq jfo--form-mod-name
               (widget-create 'editable-field
                  :size jfo--field-size
                  :format "Module: %v " ; Text after the field!
                  mod))
   (widget-insert "\n")
-  (setq-local jfo--form-name
+  (setq jfo--form-name
               (widget-create 'editable-field
                  :size jfo--field-size
                  :format "Function name: %v " ; Text after the field!
@@ -46,12 +62,12 @@
   (widget-insert "\n\n")
   (widget-insert "Arguments:")
   ;; TODO: These args need to have a checkbox (or some other identifying thing) for arg/kwd
-  ;; (setq-local jfo--form-args-old
+  ;; (setq jfo--form-args-old
   ;;       (widget-create 'editable-list
   ;;                      :entry-format "%i %d %v"
   ;;                      :value arg-names
   ;;                      '(editable-field :value "")))
-  (setq-local jfo--form-args
+  (setq jfo--form-args
               (cl-loop for arg in args
                        collect (let ((name (nth 0 arg))
                                      (val (nth 1 arg)))
@@ -70,7 +86,7 @@
 
   (widget-insert "\n\n")
   (widget-insert "Keywords:")
-  (setq-local jfo--form-kwds
+  (setq jfo--form-kwds
               (cl-loop for arg in kwds
                        collect (let ((name (nth 0 arg))
                                      (val (nth 1 arg)))
@@ -98,11 +114,11 @@
   ;;                      (message "You can count to %d." new))))
   ;;                )
   (widget-insert "\n\n")
-  (setq-local jfo--form-show-diffs (widget-create 'checkbox t))
+  (setq jfo--form-show-diffs (widget-create 'checkbox t))
   (widget-insert " Show diffs\n")
 
   (widget-insert "\n")
-  (setq-local jfo--form-submit-button
+  (setq jfo--form-submit-button
               (widget-create 'push-button
                              :notify (lambda (&rest ignore) (jfo--run-command))
                              "Start observing"))
@@ -118,17 +134,25 @@
   (widget-insert "\n")
   (widget-insert "\n")
   (widget-insert "--OUTPUT--\n")
+  ;; Make an overlay so we can go back to this later.
+  (setq jfo--output-start (make-overlay (point) (point) nil t))
   (widget-insert "\n")
-  ;; (use-local-map widget-keymap)
   (widget-setup)
   ;; (goto-char (point-min))
   ;; (search-forward "[Start")
   (goto-char (widget-get jfo--form-submit-button :from))
   )
 
+(define-derived-mode julia-funcobs-mode custom-mode "JFO")
+(define-key julia-funcobs-mode-map (kbd "C-x C-s") 'jfo--field-changed)
+(define-key julia-funcobs-mode-map "q" 'quit-window)
+
 (defun jfo--running-p ()
   (when (boundp 'jfo--form-submit-button)
     (widget-get jfo--form-submit-button :submitted)))
+
+(defun jfo--output-point ()
+  (overlay-start jfo--output-start))
 
 ;; (widget-example "ExampleFunc" '("5" "[1,2,3]" "\"something\"") '(("flip" "true") ("other" ":maybe")))
 
@@ -178,6 +202,7 @@
           jfo--form-kwds)))
 
 (defun jfo--field-changed (&rest ignored)
+  (interactive)
   (message "Trying to update")
   (when (jfo--running-p)
     (jfo--run-command)))
@@ -310,7 +335,13 @@ Tries to identify the current function and arguments."
                      (jfo--send-to-repl (concat "include("  mod-name ")")))
             (jfo--send-to-repl (concat "import " mod-name))))
 
-        (jfo--send-to-repl (concat "FunctionObserving.ObserveFunction(" mod-name ", " name ", " arg-string " ; " option-kwds ")"))
+        (jfo--send-to-repl (concat
+"pushdisplay(FunctionObserving.EMACS_DISPLAY());
+try
+    FunctionObserving.ObserveFunction(" mod-name ", " name ", " arg-string " ; " option-kwds ");
+finally
+    popdisplay(FunctionObserving.EMACS_DISPLAY());
+end;"))
         (widget-put jfo--form-submit-button :submitted t)))
 
     ;; Change the button name to reflect the new behaviour
@@ -344,6 +375,8 @@ Tries to identify the current function and arguments."
           (replace-match "[Start observing]"))
         ))
     ))
+
+
 (defun jfo--update-text (text &optional append)
   (with-current-buffer jfo--buffer-name
     (save-excursion
@@ -358,7 +391,12 @@ Tries to identify the current function and arguments."
       ;; (insert text))))
       ;; TODO: This should be replaced with custom font-locking
       ;; The replacement of endlines seems odd here. Just a hack I need?
-      (insert (ansi-color-apply (replace-regexp-in-string "\r?\n" "\n" text)))))))
+      (insert (ansi-color-apply (replace-regexp-in-string "\r?\n" "\n" text)))
+
+      ;; Handle images and other things
+      (mapcar (lambda (func) (apply func text nil))
+              jfo-after-insert-hook)
+      ))))
       ;; (insert (ansi-color-apply text)))))
 ;; (jfo--update-text "asdf\n123123\n" t)
 ;; (jfo--update-text "asdf\n123123\n" nil)
@@ -366,7 +404,7 @@ Tries to identify the current function and arguments."
 (defun jfo--term-filter (process str)
   "Hijack term process filter and grab all text output."
   ;; (message str)
-  (let* ((ind (string-match "ZCLEARZ" str))
+  (let* ((ind (string-match "<clear></clear>" str))
          (append (not ind))
          (text (if ind
                    (substring str (match-end 0))
@@ -377,6 +415,37 @@ Tries to identify the current function and arguments."
   (let ((display-buffer-overriding-action '((display-buffer-no-window) (allow-no-window . t))))
     (julia-repl--send-string command)))
 
+
+(defun jfo--render-svg (text)
+  "Look for any </svg> tags and term them into images."
+  (when (string-match "</svg>" text)
+    (save-excursion
+      (goto-char (jfo--output-point))
+      (let ((count 0))
+        (while (re-search-forward (rx "<?xml " (*? anything) "</svg>") nil t)
+          (unless (jfo--get-svg-overlay (match-beginning 0) (match-end 0))
+            (jfo--replace-svg (match-beginning 0) (match-end 0))
+            (incf count)
+            ))
+        (message "Rendered %d svgs" count)
+        )
+)))
+
+(defun jfo--get-svg-overlay (beg end)
+  (let* ((overlays-beg (overlays-at beg))
+         (overlays-end (overlays-at end))
+         (overlays-common (union overlays-beg overlays-end)))
+    (some (lambda (overlay) (and (eq (overlay-get :category overlay) 'svg-replace) overlay))
+          overlays-common)))
+
+(defun jfo--replace-svg (beg end)
+  (let* ((text (buffer-substring beg end))
+         (image (create-image text 'svg t))
+         )
+    (delete-region beg end)
+    (goto-char beg)
+    (insert (propertize "IMAGE" 'display image))
+  ))
 
 
 
