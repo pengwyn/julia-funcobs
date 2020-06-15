@@ -1,9 +1,19 @@
+;; Author: Danny Cocks (daniel.cocks@gmail.com)
+;; Version: 0.1
+;; Package-Requires: ((deferred "0.5.1") (julia-repl "1.2.0") (s "1.12.0"))
+;; Keywords: julia
+;; URL: 
+
+;;; Commentary:
+
+;; A plugin to interface with FunctionObserving.jl.
+
+;;; Code:
 
 (require 'widget)
 (require 'julia-repl)
 (require 's)
 
-;;; Code:
 
 (defvar jfo--field-size 25)
 (defvar jfo--buffer-name "*Julia Observing*")
