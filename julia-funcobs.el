@@ -38,10 +38,9 @@
   (switch-to-buffer-other-frame jfo--buffer-name)
   (set-window-dedicated-p (selected-window) t)
 
-  ;; (use-local-map julia-funcobs-keymap)
-  (julia-funcobs-mode)
-
   (kill-all-local-variables)
+
+  (julia-funcobs-mode)
   
   (let ((inhibit-read-only t))
     (erase-buffer))
@@ -86,7 +85,7 @@
                                                 :size jfo--field-size
                                                 :format (concat name ": %v")
                                                 :name name
-                                                :required (not val)
+                                                :required (not (or val (s-ends-with-p "..." name)))
                                                 :action #'jfo--field-changed
                                                 (or val "")))))
   (widget-insert "\n")
@@ -105,7 +104,7 @@
                                                 :size jfo--field-size
                                                 :format (concat name ": %v")
                                                 :name name
-                                                :required (not val)
+                                                :required (not (or val (s-ends-with-p "..." name)))
                                                 :action #'jfo--field-changed
                                                 (or val "")))))
   (widget-insert "\n")
@@ -151,11 +150,30 @@
   ;; (goto-char (point-min))
   ;; (search-forward "[Start")
   (goto-char (widget-get jfo--form-submit-button :from))
-  )
+  nil)
 
 (define-derived-mode julia-funcobs-mode custom-mode "JFO")
 (define-key julia-funcobs-mode-map (kbd "C-x C-s") 'jfo--field-changed)
 (define-key julia-funcobs-mode-map "q" 'quit-window)
+(when (featurep 'evil)
+  (evil-define-key 'normal julia-funcobs-mode-map
+    ;; motion
+    (kbd "<tab>") 'widget-forward
+    (kbd "S-<tab>") 'widget-backward
+    (kbd "<backtab>") 'widget-backward
+    (kbd "RET") 'Custom-newline
+    (kbd "]]") 'widget-forward
+    (kbd "[[") 'widget-backward
+    ;; TODO: Should the following be added?
+    (kbd "C-j") 'widget-forward
+    (kbd "C-k") 'widget-backward
+    "gj" 'widget-forward
+    "gk" 'widget-backward
+
+    ;; quit
+    "q" 'Custom-buffer-done)
+  (evil-initial-state 'julia-funcobs-mode 'insert)
+  )
 
 (defun jfo--running-p ()
   (when (boundp 'jfo--form-submit-button)
@@ -267,7 +285,10 @@
           jfo--capturing-function-assignment-regex))
 
 (defconst jfo--arg-parse
-  (rx (* blank) (group (1+ (or word (syntax symbol)))) (* blank) (optional "=" (* blank) (group (* any)) (* blank))))
+  (rx (* blank)
+      (or (group-n 1 (1+ (or word (syntax symbol))) "...")
+          (seq (group-n 1 (1+ (or word (syntax symbol)))) (optional (* blank) "=" (* blank) (group-n 2 (* any)))))
+      (* blank)))
 
 (defun julia-function-observe ()
   "Start a function observation.
@@ -293,7 +314,8 @@ Tries to identify the current function and arguments."
          (args-str (match-string-no-properties 2 line))
          (kwds-str (match-string-no-properties 3 line))
          (args (jfo--parse-args-string args-str))
-         (kwds (jfo--parse-args-string kwds-str)))
+         (kwds (jfo--parse-args-string kwds-str))
+         )
     (jfo--setup mod-name func-name args kwds)))
 
 (defun jfo--parse-args-string (args-str)
@@ -303,7 +325,7 @@ Tries to identify the current function and arguments."
               (if (string-match jfo--arg-parse arg)
                   (list (match-string 1 arg) (match-string 2 arg))
                 (error "Shouldn't get here")));;(list arg nil))
-            (split-string args-str ","))))
+            (split-string args-str "," t))))
 
 
 
@@ -362,8 +384,8 @@ end;"))
               (end (widget-get jfo--form-submit-button :to)))
           (goto-char beg)
           ;; TODO: shouldn't even need a re-search-forward here...
-          (when (re-search-forward "[[]Start observing]" end t)
-            (replace-match "[Update]"))
+          (when (re-search-forward "Start observing" end t)
+            (replace-match "Update"))
           )))
     ))
 
@@ -381,8 +403,8 @@ end;"))
             (end (widget-get jfo--form-submit-button :to)))
         (goto-char beg)
         ;; TODO: shouldn't even need a re-search-forward here...
-        (when (re-search-forward "[[]Update]" end t)
-          (replace-match "[Start observing]"))
+        (when (re-search-forward "Update" end t)
+          (replace-match "Start observing"))
         ))
     ))
 
@@ -414,7 +436,7 @@ end;"))
 (defun jfo--term-filter (process str)
   "Hijack term process filter and grab all text output."
   ;; (message str)
-  (let* ((ind (string-match "<clear></clear>" str))
+  (let* ((ind (string-match "<emacs-clear></emacs-clear>" str))
          (append (not ind))
          (text (if ind
                    (substring str (match-end 0))
@@ -438,8 +460,19 @@ end;"))
             (incf count)
             ))
         (message "Rendered %d svgs" count)
-        )
-)))
+        )))
+  (when (string-match "</emacs-svg>" text)
+    (save-excursion
+      (goto-char (jfo--output-point))
+      (let ((count 0))
+        (while (re-search-forward (rx "<emacs-svg>" (group (*? anything)) "</emacs-svg>") nil t)
+          (unless (jfo--get-svg-overlay (match-beginning 0) (match-end 0))
+            (jfo--replace-emacs-svg (match-beginning 0) (match-end 0))
+            (incf count)
+            ))
+        (message "Rendered %d emacs-svgs" count)
+        )))
+)
 
 (defun jfo--get-svg-overlay (beg end)
   (let* ((overlays-beg (overlays-at beg))
@@ -451,10 +484,22 @@ end;"))
 (defun jfo--replace-svg (beg end)
   (let* ((text (buffer-substring beg end))
          (image (create-image text 'svg t))
-         )
+         (inhibit-read-only t))
+      (delete-region beg end)
+      (goto-char beg)
+      (insert (propertize "IMAGE" 'display image))
+  ))
+
+(defun jfo--replace-emacs-svg (beg end)
+  (goto-char beg)
+  (unless (looking-at (rx "<emacs-svg>" (group (*? anything)) "</emacs-svg>"))
+    (error "Should be at an emacs-svg tag here"))
+  (let* ((filename (match-string 1))
+         (image (create-image filename 'svg))
+         (inhibit-read-only t))
     (delete-region beg end)
     (goto-char beg)
-    (insert (propertize "IMAGE" 'display image))
+    (insert (propertize "EMACS-IMAGE" 'display image))
   ))
 
 
