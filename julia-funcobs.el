@@ -6,9 +6,15 @@
 
 ;;; Commentary:
 
+;; * julia-funcobs :README:
 ;; A plugin to interface with FunctionObserving.jl.
 
+;; ** Usage
+;; Call ~julia-function-observe~ while cursor is inside a function.
+
 ;;; Code:
+
+;; * The code :code:
 
 (require 'widget)
 (require 'julia-repl)
@@ -30,7 +36,7 @@
 (defvar-local jfo--output-start nil)
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;; * Widgets
 ;;----------------------------
 
