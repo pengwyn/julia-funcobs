@@ -247,6 +247,14 @@
 
 ;; These were stolen from julia-mode
 
+;; TODO: But need to fix these up - can't use regex to parse the function line.
+
+(defconst julia-macro-regex-nogrouping
+  (rx symbol-start (: "@" (1+ (or word (syntax symbol))))))
+
+(defconst julia-prefixed-macro (rx-to-string `(: (* (: (1+ word) ".")) (regexp ,julia-macro-regex-nogrouping))))
+(defconst julia-prefixed-macro-list (rx-to-string `(: (* space) (* (regexp ,julia-prefixed-macro) (* space)))))
+
 (defconst jfo--capturing-function-regex
   (rx-to-string `(: line-start (regexp ,julia-prefixed-macro-list) symbol-start
       "function"
