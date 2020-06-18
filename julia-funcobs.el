@@ -177,7 +177,9 @@
     "gk" 'widget-backward
 
     ;; quit
-    "q" 'Custom-buffer-done)
+    "q" 'Custom-buffer-done
+    "C-x C-s" 'jfo--field-changed
+    )
   (evil-initial-state 'julia-funcobs-mode 'insert)
   )
 
@@ -207,6 +209,7 @@
                    :format (concat (format "Arg %d: " ind) "%v")
                    :name (format "Arg %d" ind)
                    :required nil
+                   :action #'jfo--field-changed
                    "")))
       (widget-insert "\n")
       (add-to-list 'jfo--form-args w t)
