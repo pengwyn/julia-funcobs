@@ -356,8 +356,8 @@ Tries to identify the current function and arguments."
           (kwds (jfo--get-widget-kwds))
           (show-diffs (widget-value jfo--form-show-diffs)))
       ;; (message "%S" jfo--form-submit-button)
-      (let* ((arg-string (concat "[ " (s-join ", " args) " ]"
-                                 ", [ " (s-join ", " kwds) " ]"))
+      (let* ((arg-string (concat "tuple( " (s-join ", " args) " )"
+                                 ", tuple( " (s-join ", " kwds) " )"))
              (option-kwds (s-join ", " (cl-loop for (name val) in `(("show_diffs" show-diffs)
                                                                     ("continuing" ,(jfo--running-p)))
                                                   collect (concat name "=" (if val "true" "false"))))))
