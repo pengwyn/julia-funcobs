@@ -241,8 +241,9 @@
 (defun jfo--field-changed (&rest ignored)
   (interactive)
   (message "Trying to update")
-  (when (jfo--running-p)
-    (jfo--run-command)))
+  ;; (when (jfo--running-p)
+  ;;   (jfo--run-command))
+  (jfo--run-command))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; * Interactives
