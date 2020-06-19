@@ -23,6 +23,7 @@
 
 (defvar jfo--field-size 25)
 (defvar jfo--buffer-name "*Julia Observing*")
+(defvar jfo--outputting nil)
 
 (defvar jfo-after-insert-hook '(jfo--render-svg)
   "Hooks to run after insert text from the process filter.")
@@ -158,7 +159,12 @@
   (goto-char (widget-get jfo--form-submit-button :from))
   nil)
 
-(define-derived-mode julia-funcobs-mode custom-mode "JFO")
+(define-derived-mode julia-funcobs-mode custom-mode "JFO"
+  "Major mode for interface to FunctionObserving.jl"
+  (add-hook 'change-major-mode-hook 'jfo--clean-up-filter nil t)
+  (add-hook 'kill-buffer-hook 'jfo--clean-up-filter nil t)
+  )
+
 (define-key julia-funcobs-mode-map (kbd "C-x C-s") 'jfo--field-changed)
 (define-key julia-funcobs-mode-map "q" 'quit-window)
 (when (featurep 'evil)
@@ -352,6 +358,9 @@ Tries to identify the current function and arguments."
 ;; * Process stuff
 ;;----------------------------
 
+(defun jfo--clean-up-filter ()
+  (advice-remove 'term-emulate-terminal #'jfo--term-filter))
+
 (defun jfo--run-command ()
   (with-current-buffer jfo--buffer-name 
     (let ((mod-name (widget-value jfo--form-mod-name))
@@ -367,7 +376,7 @@ Tries to identify the current function and arguments."
                                                   collect (concat name "=" (if val "true" "false"))))))
 
         ;; Need to hack term-mode's filter
-        (advice-remove 'term-emulate-terminal #'jfo--term-filter)
+        (jfo--clean-up-filter)
         (advice-add 'term-emulate-terminal :before #'jfo--term-filter)
         ;; TODO: Need to remove this when the terminal stops.
 
@@ -377,13 +386,23 @@ Tries to identify the current function and arguments."
             (term-interrupt-subjob)))
 
         ;; Prep the package/file
-        (jfo--send-to-repl "using FunctionObserving")
+        (jfo--send-to-repl "begin using FunctionObserving")
         (when (not (string= mod-name ":auto"))
           (if (string-prefix-p "\"" mod-name)
               ;; This seems to be broken
               (progn (jfo--send-to-repl (concat "Revise.includet("  mod-name ")"))
                      (jfo--send-to-repl (concat "include("  mod-name ")")))
-            (jfo--send-to-repl (concat "import " mod-name))))
+            ;; Long-winded way to add in package to LOAD_PATH if needed.
+            ;; Note: this assumes the cwd is the right place for the module.
+            (jfo--send-to-repl (concat
+"uuidkey = Base.identify_package(Main, \"" mod-name "\")
+if(uuidkey === nothing)
+    pushfirst!(LOAD_PATH, \".\")
+    import " mod-name "
+    popfirst!(LOAD_PATH)
+else
+    import " mod-name "
+end"))))
 
         (jfo--send-to-repl (concat
 "pushdisplay(FunctionObserving.EMACS_DISPLAY());
@@ -391,7 +410,9 @@ try
     FunctionObserving.ObserveFunction(" mod-name ", " name ", " arg-string " ; " option-kwds ");
 finally
     popdisplay(FunctionObserving.EMACS_DISPLAY());
-end;"))
+end"))
+        ;; This bracketed paste thing is weird...
+        (jfo--send-to-repl "end" t)
         (widget-put jfo--form-submit-button :submitted t)))
 
     ;; Change the button name to reflect the new behaviour
@@ -411,8 +432,8 @@ end;"))
 
 (defun jfo--break ()
   (with-current-buffer (julia-repl--live-buffer)
-        (advice-remove 'term-emulate-terminal #'jfo--term-filter)
-        (term-interrupt-subjob))
+    (jfo--clean-up-filter)
+    (term-interrupt-subjob))
   (with-current-buffer jfo--buffer-name 
     (widget-put jfo--form-submit-button :submitted nil)
     (save-excursion
@@ -454,16 +475,19 @@ end;"))
 (defun jfo--term-filter (process str)
   "Hijack term process filter and grab all text output."
   ;; (message str)
-  (let* ((ind (string-match "<emacs-clear></emacs-clear>" str))
-         (append (not ind))
-         (text (if ind
-                   (substring str (match-end 0))
-                 str)))
-    (jfo--update-text text append)))
+  (when (and (not jfo--outputting)
+             (eq (process-buffer process) (julia-repl--live-buffer)))
+    (let* ((ind (string-match "<emacs-clear></emacs-clear>" str))
+           (append (not ind))
+           (text (if ind
+                     (substring str (match-end 0))
+                   str)))
+      (jfo--update-text text append))))
 
-(defun jfo--send-to-repl (command)
-  (let ((display-buffer-overriding-action '((display-buffer-no-window) (allow-no-window . t))))
-    (julia-repl--send-string command)))
+(defun jfo--send-to-repl (command &optional no-bracket)
+  (let ((display-buffer-overriding-action '((display-buffer-no-window) (allow-no-window . t)))
+        (jfo--outputting t))
+    (julia-repl--send-string command nil no-bracket)))
 
 
 (defun jfo--render-svg (text)
