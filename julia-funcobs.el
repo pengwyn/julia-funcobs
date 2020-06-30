@@ -7,7 +7,7 @@
 ;;; Commentary:
 
 ;; * julia-funcobs :README:
-;; A plugin to interface with FunctionObserving.jl.
+;; A plugin to interface with EyeOfRa.jl, which used to be called FunctionObserving.jl.
 
 ;; ** Usage
 ;; Call ~julia-function-observe~ while cursor is inside a function.
@@ -160,7 +160,7 @@
   nil)
 
 (define-derived-mode julia-funcobs-mode custom-mode "JFO"
-  "Major mode for interface to FunctionObserving.jl"
+  "Major mode for interface to EyeOfRa.jl"
   (add-hook 'change-major-mode-hook 'jfo--clean-up-filter nil t)
   (add-hook 'kill-buffer-hook 'jfo--clean-up-filter nil t)
   )
@@ -386,7 +386,7 @@ Tries to identify the current function and arguments."
             (term-interrupt-subjob)))
 
         ;; Prep the package/file
-        (jfo--send-to-repl "begin using FunctionObserving")
+        (jfo--send-to-repl "begin using EyeOfRa")
         (when (not (string= mod-name ":auto"))
           (if (string-prefix-p "\"" mod-name)
               ;; This seems to be broken
@@ -405,11 +405,11 @@ else
 end"))))
 
         (jfo--send-to-repl (concat
-"pushdisplay(FunctionObserving.EMACS_DISPLAY());
+"pushdisplay(EyeOfRa.EMACS_DISPLAY());
 try
-    FunctionObserving.ObserveFunction(" mod-name ", " name ", " arg-string " ; " option-kwds ");
+    EyeOfRa.ObserveFunction(" mod-name ", " name ", " arg-string " ; " option-kwds ");
 finally
-    popdisplay(FunctionObserving.EMACS_DISPLAY());
+    popdisplay(EyeOfRa.EMACS_DISPLAY());
 end"))
         ;; This bracketed paste thing is weird...
         (jfo--send-to-repl "end" t)
