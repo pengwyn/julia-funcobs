@@ -373,7 +373,8 @@ Tries to identify the current function and arguments."
                                  ", tuple( " (s-join ", " kwds) " )"))
              (option-kwds (s-join ", " (cl-loop for (name val) in `(("show_diffs" show-diffs)
                                                                     ("continuing" ,(jfo--running-p)))
-                                                  collect (concat name "=" (if val "true" "false"))))))
+                                                collect (concat name "=" (if val "true" "false")))))
+             str-to-send)
 
         ;; Need to hack term-mode's filter
         (jfo--clean-up-filter)
@@ -386,33 +387,35 @@ Tries to identify the current function and arguments."
             (term-interrupt-subjob)))
 
         ;; Prep the package/file
-        (jfo--send-to-repl "begin using EyeOfRa")
+        (setq str-to-send (concat str-to-send "begin using EyeOfRa\n"))
         (when (not (string= mod-name ":auto"))
-          (if (string-prefix-p "\"" mod-name)
-              ;; This seems to be broken
-              (progn (jfo--send-to-repl (concat "Revise.includet("  mod-name ")"))
-                     (jfo--send-to-repl (concat "include("  mod-name ")")))
-            ;; Long-winded way to add in package to LOAD_PATH if needed.
-            ;; Note: this assumes the cwd is the right place for the module.
-            (jfo--send-to-repl (concat
-"uuidkey = Base.identify_package(Main, \"" mod-name "\")
+          (setq str-to-send (concat str-to-send
+                                    (if (string-prefix-p "\"" mod-name)
+                                        ;; This seems to be broken
+                                        (concat "Revise.includet("  mod-name ")\n"
+                                                "include("  mod-name ")\n")
+                                      ;; Long-winded way to add in package to LOAD_PATH if needed.
+                                      ;; Note: this assumes the cwd is the right place for the module.
+                                      (concat "uuidkey = Base.identify_package(Main, \"" mod-name "\")
 if(uuidkey === nothing)
     pushfirst!(LOAD_PATH, \".\")
     import " mod-name "
     popfirst!(LOAD_PATH)
 else
     import " mod-name "
-end"))))
+end\n")))))
 
-        (jfo--send-to-repl (concat
+        (setq str-to-send (concat str-to-send
 "pushdisplay(EyeOfRa.EMACS_DISPLAY());
 try
     EyeOfRa.ObserveFunction(" mod-name ", " name ", " arg-string " ; " option-kwds ");
 finally
     popdisplay(EyeOfRa.EMACS_DISPLAY());
-end"))
+end\n
+end\n"))
         ;; This bracketed paste thing is weird...
-        (jfo--send-to-repl "end" t)
+        (jfo--send-to-repl str-to-send)
+        (jfo--send-to-repl "\n" t)
         (widget-put jfo--form-submit-button :submitted t)))
 
     ;; Change the button name to reflect the new behaviour
@@ -477,12 +480,23 @@ end"))
   ;; (message str)
   (when (and (not jfo--outputting)
              (eq (process-buffer process) (julia-repl--live-buffer)))
-    (let* ((ind (string-match "<emacs-clear></emacs-clear>" str))
-           (append (not ind))
-           (text (if ind
-                     (substring str (match-end 0))
-                   str)))
-      (jfo--update-text text append))))
+    ;; First remove anything in bracketed paste controls
+    ;; Might have to accumulate this later.
+    (let* ((start (string-match (rx "^[[200~") str))
+           (end (and (string-match (rx "^[[201~") str) (match-end 0)))
+           (str (if (and start end)
+                    (concat (substring str 0 start)
+                            (substring str end))
+                  str)))
+      ;; (message "%S" start)
+      ;; (message "%S" end)
+      ;; (message "%S" str)
+      (let* ((ind (string-match "<emacs-clear></emacs-clear>" str))
+             (append (not ind))
+             (str (if ind
+                      (substring str (match-end 0))
+                    str)))
+        (jfo--update-text str append)))))
 
 (defun jfo--send-to-repl (command &optional no-bracket)
   (let ((display-buffer-overriding-action '((display-buffer-no-window) (allow-no-window . t)))
