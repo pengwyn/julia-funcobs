@@ -119,6 +119,7 @@
                  :notify (lambda (&rest ignore) (jfo--add-kwd))
                  "Add")
 
+
   ;; (widget-create 'editable-field :size 13 :format "arg name: %v "
   ;;                :notify
   ;;                (lambda (widget &rest ignore)
@@ -156,7 +157,14 @@
   (widget-setup)
   ;; (goto-char (point-min))
   ;; (search-forward "[Start")
-  (goto-char (widget-get jfo--form-submit-button :from))
+
+  ;; If a required element is set without a value, then put cursor there, otherwise put cursor on submit button.
+  (let ((focus (or (seq-some (lambda (item) (and (widget-get item :required) (+ (widget-get item :from) (length (widget-get item :name)) 2)))
+                            jfo--form-args)
+                  (seq-some (lambda (item) (and (widget-get item :required) (+ (widget-get item :from) (length (widget-get item :name)) 2)))
+                            jfo--form-kwds)
+                  (widget-get jfo--form-submit-button :from))))
+    (goto-char focus))
   nil)
 
 (define-derived-mode julia-funcobs-mode custom-mode "JFO"
