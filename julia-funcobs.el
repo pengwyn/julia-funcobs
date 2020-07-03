@@ -371,6 +371,7 @@ Tries to identify the current function and arguments."
 
 (defun jfo--run-command ()
   (with-current-buffer jfo--buffer-name 
+    (jfo--update-text "Restarting...")
     (let ((mod-name (widget-value jfo--form-mod-name))
           (name (widget-value jfo--form-name))
           (args (jfo--get-widget-args))
