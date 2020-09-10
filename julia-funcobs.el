@@ -19,6 +19,7 @@
 (require 'widget)
 (require 'julia-repl)
 (require 's)
+(require 'cus-edit)
 
 
 (defvar jfo--field-size 25)
@@ -167,7 +168,7 @@
     (goto-char focus))
   nil)
 
-(define-derived-mode julia-funcobs-mode custom-mode "JFO"
+(define-derived-mode julia-funcobs-mode Custom-mode "JFO"
   "Major mode for interface to EyeOfRa.jl"
   (add-hook 'change-major-mode-hook 'jfo--clean-up-filter nil t)
   (add-hook 'kill-buffer-hook 'jfo--clean-up-filter nil t)

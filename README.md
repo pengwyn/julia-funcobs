@@ -9,7 +9,7 @@
 
 # julia-funcobs
 
-A plugin to interface with FunctionObserving.jl.
+A plugin to interface with EyeOfRa.jl.
 
 
 <a id="orga9a55b7"></a>
